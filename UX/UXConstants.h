@@ -1,0 +1,1 @@
+extern NSInteger const UXGradientLayerTag;
