@@ -17,6 +17,4 @@
 @property (unsafe_unretained) IBOutlet UITapGestureRecognizer *tapRecognizer;
 @property BOOL highlighted;
 
-- (IBAction)tapReceived:(UITapGestureRecognizer *)sender;
-
 @end

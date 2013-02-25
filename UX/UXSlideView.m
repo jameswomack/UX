@@ -119,26 +119,6 @@ UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat 
     return self;
 }
 
-- (NSArray*)fitViewsOfClass:(Class)class format:(Float32Point)format
-{
-    // 1 0 - side by side
-    // 0 1 - top on top
-    // 1 1 - 2 x grid
-    // 0 0 - aspect fill
-    
-    NSMutableArray *subviews = NSMutableArray.new;
-    
-    [self.subviews enumerateObjectsUsingBlock:^(UIView *view, NSUInteger index, BOOL *stop) {
-        if ([view isKindOfClass:class])
-        {
-            [subviews addObject:view];
-        }
-    }];
-    
-    
-    return nil;
-}
-
 
 + (void)superviewCompensationOperation:(NSTimer *)timer
 {
@@ -166,14 +146,25 @@ UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat 
         slideView->UXSlideViewPointOpened.y = slideView->UXSlideViewPointClosed.y = slideView.frame.origin.y;
         
         slideView->UXSlideViewPointClosed.x = cmpf(-(slideView.frame.size.width/2.f));
+        
+        CALayer *darkenLayer = CALayer.layer;
+        darkenLayer = formatForView(darkenLayer, slideView);
+        darkenLayer.backgroundColor = [UIColor colorWithWhite:0.f alpha:0.4f].CGColor;
+        darkenLayer.opacity = 0.f;
+        darkenLayer.name = @"UXDarkenLayer";
+        [slideView.layer addSublayer:darkenLayer];
     }
 }
 
-
-- (IBAction)tapReceived:(UITapGestureRecognizer *)sender
+CALayer* formatForView(CALayer *layer, UIView *view)
 {
-    UIGestureRecognizerState state = sender.state;
-    
+    layer.frame = CGRectOriginal(view.frame);
+    layer.cornerRadius = view.layer.cornerRadius;
+    return layer;
+}
+
+NSString* NSStringFromGestureRecognizerState(UIGestureRecognizerState state)
+{    
     NSString *stateString;
     
     switch (state)
@@ -202,9 +193,7 @@ UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat 
             break;
     }
     
-    NSLog(@"%@", stateString);
-    
-    
+    return stateString;
 }
 
 
@@ -223,7 +212,17 @@ UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat 
     [UIView animateWithDuration:reset? .1f : 0.f animations:^{
         
         if (reset)
+        {
+            for (CALayer *layer in self.layer.sublayers)
+            {
+                if ([layer.name isEqual:@"UXDarkenLayer"])
+                {
+                    layer.opacity = 0.f;
+                }
+            }
+            
             self.transform = tranform;
+        }
         
     } completion:^(BOOL finished) {
         
@@ -252,19 +251,27 @@ static NSTimer *timer;
     stop = false;
     UXSlideViewPoint = self.frame.origin;
     opened = self.frame.origin.x == UXSlideViewXCompensation;
-    interval = 0;
-    timer = nil;
     
+    [self depress];
+}
+
+- (void)depress
+{
     [UIView animateWithDuration:.2f animations:^{
         self.transform = CGAffineTransformMakeScale(.9f, .9f);
+        for (CALayer *layer in self.layer.sublayers)
+        {
+            if ([layer.name isEqual:@"UXDarkenLayer"])
+            {
+                layer.opacity = 1.f;
+            }
+        }
     }];
 }
 
 - (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
-{    
-    UITouch *touch = touches.anyObject;
-    
-    CGPoint currentPoint = [touch locationInView:self];
+{        
+    CGPoint currentPoint = [touches.anyObject locationInView:self];
     
     BOOL hasntFocus = (currentPoint.x > rect.size.width || currentPoint.y > rect.size.height || currentPoint.x < 0 || currentPoint.y < 0);
     
@@ -273,8 +280,7 @@ static NSTimer *timer;
         timer = [NSTimer scheduledTimerWithTimeInterval:.05f target:self selector:@selector(increment:) userInfo:nil repeats:YES];
         if (interval > .5f)
         {
-            end = YES;
-            [self animateOrigin:UXSlideViewPoint];
+            [self reset];
         }
         else
         {
@@ -283,9 +289,15 @@ static NSTimer *timer;
     }
     else
     {
-        interval = 0;
-        timer = nil;
+        [self timerTeardown];
     }
+}
+
+- (void)timerTeardown
+{
+    interval = 0;
+    [timer invalidate];
+    timer = nil;
 }
 
 - (void)increment:(NSTimer *)aTimer
@@ -294,36 +306,52 @@ static NSTimer *timer;
 }
 
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
-{
-    UITouch *touch = touches.anyObject;
-    
-    CGPoint currentPoint = [touch locationInView:self];
-    
-    NSLog(@"%f %f", currentPoint.x, currentPoint.y);
-    
+{    
     if (end)
         return;
     
     if (stop)
     {
-        [self animateOrigin:UXSlideViewPoint];
+        [self reset];
     }
     else
     {
-        NSLog(@"%f %f", self.frame.origin.x, UXSlideViewXCompensation);
-        [self animateOrigin:opened ? UXSlideViewPointClosed : UXSlideViewPointOpened];
-        
-        for (UXSlideView *slideView in self.superview.subviews)
-        {
-            if ([slideView isKindOfClass:UXSlideView.class] && ![slideView isEqual:self])
-            {
-                !opened ? [slideView animateOrigin:slideView->UXSlideViewPointClosed] : 0;
-            }
-        }
+        opened ? [self close] : [self open];
     }
     
-    interval = 0;
-    timer = nil;
+    [self timerTeardown];
+}
+
+
+NSArray* matchingClass(NSArray *self, Class class)
+{        
+	return [self filteredArrayUsingPredicate:
+      [NSPredicate predicateWithBlock:^BOOL(id obj, NSDictionary *bind){
+        return (![obj isEqual:self] && [obj isKindOfClass:class]);
+    }]];
+}
+
+- (void)reset
+{
+    end = YES;
+    [self animateOrigin:UXSlideViewPoint];
+}
+
+- (void)open
+{
+    [self animateOrigin:UXSlideViewPointOpened];
+    
+    NSArray *slideViews = matchingClass(self.superview.subviews, UXSlideView.class);
+    for (UXSlideView *slideView in slideViews)
+    {
+        [slideView animateOrigin:slideView->UXSlideViewPointClosed];
+    }
+}
+
+
+- (void)close
+{
+    [self animateOrigin:UXSlideViewPointClosed];
 }
 
 
@@ -370,8 +398,7 @@ static NSTimer *timer;
         [view.layer insertSublayer:backgroundGradientLayer atIndex:0];
     }
 
-    backgroundGradientLayer.frame = CGRectOriginal(view.frame);
-    backgroundGradientLayer.cornerRadius = view.layer.cornerRadius;
+    backgroundGradientLayer = (CAGradientLayer*)formatForView(backgroundGradientLayer, view);
 }
 
 
