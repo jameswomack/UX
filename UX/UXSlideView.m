@@ -35,13 +35,30 @@ static UIColor *UXGradientColorTop;
 static UIColor *UXGradientColorBtm;
 static CGFloat UXSlideViewXCompensation;
 static __strong CAGradientLayer *backgroundGradientLayer;
+static BOOL end;
+static BOOL stop;
+static BOOL opened;
+static NSTimeInterval interval;
+static NSTimer *timer;
 
+NSArray* matchingClass(NSArray *self, Class class);
 CGRect CGRectOriginal(CGRect rect);
 CGRect CGRectInvisibilty(CGRect rect);
 CGRect CGRectShorterThan(CGRect rect, CGFloat times, CGRect rectOther);
 CGFloat cmpf(CGFloat floatToCompensate);
 UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat x, CGFloat y);
+CALayer* formatForView(CALayer *layer, UIView *view);
+NSString* NSStringFromGestureRecognizerState(UIGestureRecognizerState state);
 
+
+
+NSArray* matchingClass(NSArray *self, Class class)
+{
+	return [self filteredArrayUsingPredicate:
+            [NSPredicate predicateWithBlock:^BOOL(id obj, NSDictionary *bind){
+        return (![obj isEqual:self] && [obj isKindOfClass:class]);
+    }]];
+}
 
 
 CGRect CGRectOriginal(CGRect rect)
@@ -89,6 +106,49 @@ UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat 
     view.layer.shadowOffset = CGSizeMake(x, y);
     return view;
 }
+
+
+CALayer* formatForView(CALayer *layer, UIView *view)
+{
+    layer.frame = CGRectOriginal(view.frame);
+    layer.cornerRadius = view.layer.cornerRadius;
+    return layer;
+}
+
+
+NSString* NSStringFromGestureRecognizerState(UIGestureRecognizerState state)
+{
+    NSString *stateString;
+    
+    switch (state)
+    {
+            
+        case UIGestureRecognizerStateBegan:
+            stateString = @"UIGestureRecognizerStateBegan";
+            break;
+        case UIGestureRecognizerStateCancelled:
+            stateString = @"UIGestureRecognizerStateCancelled";
+            break;
+        case UIGestureRecognizerStateChanged:
+            stateString = @"UIGestureRecognizerStateChanged";
+            break;
+        case UIGestureRecognizerStateFailed:
+            stateString = @"UIGestureRecognizerStateFailed";
+            break;
+        case UIGestureRecognizerStatePossible:
+            stateString = @"UIGestureRecognizerStatePossible";
+            break;
+        case UIGestureRecognizerStateRecognized:
+            stateString = @"UIGestureRecognizerStateRecognized";
+            break;
+            
+        default:
+            break;
+    }
+    
+    return stateString;
+}
+
 
 
 + (void)initialize
@@ -156,56 +216,18 @@ UIView* UIViewShadowized(UIView *view, UIColor *color, CGFloat opacity, CGFloat 
     }
 }
 
-CALayer* formatForView(CALayer *layer, UIView *view)
-{
-    layer.frame = CGRectOriginal(view.frame);
-    layer.cornerRadius = view.layer.cornerRadius;
-    return layer;
-}
-
-NSString* NSStringFromGestureRecognizerState(UIGestureRecognizerState state)
-{    
-    NSString *stateString;
-    
-    switch (state)
-    {
-    
-        case UIGestureRecognizerStateBegan:
-            stateString = @"UIGestureRecognizerStateBegan";
-            break;
-        case UIGestureRecognizerStateCancelled:
-            stateString = @"UIGestureRecognizerStateCancelled";
-            break;
-        case UIGestureRecognizerStateChanged:
-            stateString = @"UIGestureRecognizerStateChanged";
-            break;
-        case UIGestureRecognizerStateFailed:
-            stateString = @"UIGestureRecognizerStateFailed";
-            break;
-        case UIGestureRecognizerStatePossible:
-            stateString = @"UIGestureRecognizerStatePossible";
-            break;
-        case UIGestureRecognizerStateRecognized:
-            stateString = @"UIGestureRecognizerStateRecognized";
-            break;
-            
-        default:
-            break;
-    }
-    
-    return stateString;
-}
-
 
 - (void)animateOrigin:(CGPoint)origin
 {
     [self animateOrigin:origin duration:.5f];
 }
 
+
 - (void)animateOrigin:(CGPoint)origin duration:(NSTimeInterval)duration
 {
     [self animateOrigin:origin duration:duration reset:YES];
 }
+
 
 - (void)animateOrigin:(CGPoint)origin duration:(NSTimeInterval)duration reset:(BOOL)reset
 {
@@ -239,12 +261,6 @@ NSString* NSStringFromGestureRecognizerState(UIGestureRecognizerState state)
 }
 
 
-static BOOL end;
-static BOOL stop;
-static BOOL opened;
-static NSTimeInterval interval;
-static NSTimer *timer;
-
 - (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
 {
     end = false;
@@ -255,19 +271,6 @@ static NSTimer *timer;
     [self depress];
 }
 
-- (void)depress
-{
-    [UIView animateWithDuration:.2f animations:^{
-        self.transform = CGAffineTransformMakeScale(.9f, .9f);
-        for (CALayer *layer in self.layer.sublayers)
-        {
-            if ([layer.name isEqual:@"UXDarkenLayer"])
-            {
-                layer.opacity = 1.f;
-            }
-        }
-    }];
-}
 
 - (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
 {        
@@ -293,17 +296,6 @@ static NSTimer *timer;
     }
 }
 
-- (void)timerTeardown
-{
-    interval = 0;
-    [timer invalidate];
-    timer = nil;
-}
-
-- (void)increment:(NSTimer *)aTimer
-{
-    interval += .05f;
-}
 
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
 {    
@@ -323,19 +315,41 @@ static NSTimer *timer;
 }
 
 
-NSArray* matchingClass(NSArray *self, Class class)
-{        
-	return [self filteredArrayUsingPredicate:
-      [NSPredicate predicateWithBlock:^BOOL(id obj, NSDictionary *bind){
-        return (![obj isEqual:self] && [obj isKindOfClass:class]);
-    }]];
+- (void)timerTeardown
+{
+    interval = 0;
+    [timer invalidate];
+    timer = nil;
 }
+
+
+- (void)increment:(NSTimer *)aTimer
+{
+    interval += .05f;
+}
+
+
+- (void)depress
+{
+    [UIView animateWithDuration:.2f animations:^{
+        self.transform = CGAffineTransformMakeScale(.9f, .9f);
+        for (CALayer *layer in self.layer.sublayers)
+        {
+            if ([layer.name isEqual:@"UXDarkenLayer"])
+            {
+                layer.opacity = 1.f;
+            }
+        }
+    }];
+}
+
 
 - (void)reset
 {
     end = YES;
     [self animateOrigin:UXSlideViewPoint];
 }
+
 
 - (void)open
 {
